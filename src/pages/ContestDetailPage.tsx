@@ -44,7 +44,7 @@ const ContestDetailPage = () => {
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <Link to="/contests" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
         <ChevronLeft className="w-4 h-4" />
-        Back to Lab Exams
+        Back to Contests
       </Link>
 
       <div className="glass-card rounded-xl p-6">
@@ -60,14 +60,10 @@ const ContestDetailPage = () => {
             <div className="flex items-center gap-5 mt-3 text-sm text-muted-foreground">
               <span className="flex items-center gap-1.5"><Calendar className="w-4 h-4" /> {new Date(contest.startTime).toLocaleString()}</span>
               <span className="flex items-center gap-1.5"><Clock className="w-4 h-4" /> {contest.duration} min</span>
-              <span className="flex items-center gap-1.5"><Users className="w-4 h-4" /> {contest._count?.registrations ?? 0} participants</span>
+              <span className="flex items-center gap-1.5"><Users className="w-4 h-4" /> {contest.participants ?? contest._count?.registrations ?? 0} participants</span>
             </div>
           </div>
-          {contest.status === "SCHEDULED" && (
-            <Button onClick={() => registerMut.mutate(id!)} disabled={registerMut.isPending}>
-              {registerMut.isPending ? "Registering..." : "Register"}
-            </Button>
-          )}
+
         </div>
       </div>
 
@@ -141,9 +137,9 @@ const ContestDetailPage = () => {
                         )}
                       </td>
                       <td className="py-3 px-4 font-medium">{entry.student?.name || entry.name || "—"}</td>
-                      <td className="py-3 px-4 text-right font-semibold">{entry.totalScore ?? entry.score ?? 0}</td>
-                      <td className="py-3 px-4 text-right">{entry.problemsSolved ?? entry.solved ?? 0}</td>
-                      <td className="py-3 px-4 text-right text-muted-foreground">{entry.totalPenalty ?? entry.penalty ?? 0} min</td>
+                      <td className="py-3 px-4 text-right font-semibold text-primary">{entry.score ?? entry.totalScore ?? 0}</td>
+                      <td className="py-3 px-4 text-right">{entry.solvedCount ?? entry.solved ?? entry.problemsSolved ?? 0}</td>
+                      <td className="py-3 px-4 text-right text-muted-foreground">{entry.penalty ?? entry.totalPenalty ?? 0} min</td>
                     </tr>
                   ))}
                 </tbody>

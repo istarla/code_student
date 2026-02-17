@@ -1,263 +1,442 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Editor from "@monaco-editor/react";
-import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ChevronLeft, Loader2, Play, Send, Bookmark, RotateCcw, Monitor, Type, Sun, Moon, Lightbulb, LightbulbOff, Settings, Keyboard, Maximize2, Minimize2, ChevronUp, ChevronDown } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  ChevronLeft,
-  Bookmark,
-  BookmarkCheck,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  Clock,
-  MemoryStick,
-  Play,
-  Send,
-  GripVertical,
-  GripHorizontal
-} from "lucide-react";
-import DifficultyBadge from "@/components/DifficultyBadge";
-import { getProblemById, runCode, submitCode, getLanguages, addBookmark, removeBookmark, getMySubmissions } from "@/lib/api";
-import type { Problem, Language, RunResult } from "@/lib/api";
+import { useProblem, useRunCode, useSubmitCode, useAddBookmark, useRemoveBookmark, useLanguages } from "@/hooks/useApi";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import DifficultyBadge from "@/components/DifficultyBadge";
+import KeyboardShortcutsDialog from "@/components/KeyboardShortcutsDialog";
 
-// Map backend language values to Monaco editor language IDs
-const MONACO_LANGUAGE_MAP: Record<string, string> = {
+const MONACO_LANGUAGE_MAP: Record<string | number, string> = {
   javascript: "javascript",
   python: "python",
   java: "java",
-  c: "c",
   cpp: "cpp",
+  c: "c",
   go: "go",
   rust: "rust",
+  typescript: "typescript",
   ruby: "ruby",
   php: "php",
   swift: "swift",
   kotlin: "kotlin",
   scala: "scala",
   csharp: "csharp",
-  typescript: "typescript",
+  // Map Judge0 IDs back to Monaco languages
+  63: "javascript",
+  71: "python",
+  62: "java",
+  54: "cpp",
+  50: "c",
+  60: "go",
+  73: "rust",
+  74: "typescript",
+  72: "ruby",
+  68: "php",
+  83: "swift",
+  78: "kotlin",
+  81: "scala",
+  51: "csharp",
 };
 
-// Backend-supported Judge0 language IDs (matches exactly with backend Judge0Service LANGUAGE_IDS)
-const BACKEND_SUPPORTED_JUDGE0_IDS: Record<number, string> = {
-  71: "python",      // Python 3.8.1
-  62: "java",        // Java (OpenJDK 13.0.1)
-  54: "cpp",         // C++ (GCC 9.2.0)
-  50: "c",           // C (GCC 9.2.0)
-  63: "javascript",  // JavaScript (Node.js 12.14.0)
-  74: "typescript",  // TypeScript (3.7.4)
-  60: "go",          // Go (1.13.5)
-  73: "rust",        // Rust (1.40.0)
-  72: "ruby",        // Ruby (2.7.0)
-  56: "php",         // PHP (7.4.1)
-  83: "swift",       // Swift (5.2.3)
-  78: "kotlin",      // Kotlin (1.3.70)
-  81: "scala",       // Scala (2.13.2)
-  51: "csharp",      // C# (Mono 6.6.0.161)
-};
+// Supported language IDs from backend's LANGUAGE_IDS mapping
+const SUPPORTED_LANGUAGE_IDS = new Set([71, 62, 54, 50, 63, 74, 60, 73, 72, 68, 83, 78, 81, 51]);
 
-// Normalize a language entry from Judge0 API
-function normalizeLanguage(raw: any): Language | null {
-  if (!raw || typeof raw !== 'object') return null;
-  
-  const judge0Id = Number(raw.id);
-  const judge0Name = raw.name || '';
-  
-  const backendKey = BACKEND_SUPPORTED_JUDGE0_IDS[judge0Id];
-  if (!backendKey) return null;
-  
-  const displayName = judge0Name.replace(/\s*\([^)]*\)/, '').trim();
-  
-  return {
-    id: String(judge0Id),
-    name: displayName,
-    value: backendKey,
-    version: '',
-    isActive: true,
-  };
+// No driver code needed - using real backend execution
+
+// Default boilerplate templates for each language
+const getBoilerplate = (language: string): string => {
+  const templates: Record<string, string> = {
+    javascript: `// Write your solution here
+function solution() {
+    // Your code goes here
+    
 }
+
+solution();`,
+    python: `# Write your solution here
+def solution():
+    # Your code goes here
+    pass
+
+if __name__ == "__main__":
+    solution()`,
+    java: `public class Solution {
+    public static void main(String[] args) {
+        // Write your solution here
+        
+    }
+}`,
+    cpp: `#include <iostream>
+using namespace std;
+
+int main() {
+    // Write your solution here
+    
+    return 0;
+}`,
+    c: `#include <stdio.h>
+
+int main() {
+    // Write your solution here
+    
+    return 0;
+}`,
+    go: `package main
+
+import "fmt"
+
+func main() {
+    // Write your solution here
+    
+}`,
+    rust: `fn main() {
+    // Write your solution here
+    
+}`,
+    typescript: `// Write your solution here
+function solution(): void {
+    // Your code goes here
+    
+}
+
+solution();`,
+    ruby: `# Write your solution here
+def solution
+    # Your code goes here
+    
+end
+
+solution`,
+    php: `<?php
+// Write your solution here
+function solution() {
+    // Your code goes here
+    
+}
+
+solution();
+?>`,
+    swift: `import Foundation
+
+// Write your solution here
+func solution() {
+    // Your code goes here
+    
+}
+
+solution()`,
+    kotlin: `fun main() {
+    // Write your solution here
+    
+}`,
+    scala: `object Solution {
+    def main(args: Array[String]): Unit = {
+        // Write your solution here
+        
+    }
+}`,
+    csharp: `using System;
+
+class Solution {
+    static void Main() {
+        // Write your solution here
+        
+    }
+}`
+  };
+  
+  return templates[language] || `// Write your solution here\n`;
+};
+
+// Helper to map Judge0 names/IDs to slugs expected by the backend
+const getLanguageSlug = (lang: any): string => {
+  if (lang.value) return lang.value;
+  
+  const langId = typeof lang.id === 'string' ? parseInt(lang.id) : lang.id;
+  
+  // Map by Judge0 ID first (most reliable)
+  const idToSlug: Record<number, string> = {
+    71: 'python',
+    62: 'java',
+    54: 'cpp',
+    50: 'c',
+    63: 'javascript',
+    74: 'typescript',
+    60: 'go',
+    73: 'rust',
+    72: 'ruby',
+    68: 'php',
+    83: 'swift',
+    78: 'kotlin',
+    81: 'scala',
+    51: 'csharp',
+  };
+  
+  if (idToSlug[langId]) return idToSlug[langId];
+  
+  // Fallback to name parsing
+  const name = (lang.name || "").toLowerCase().trim();
+  if (name.includes('javascript') || name.includes('node.js')) return 'javascript';
+  if (name.includes('typescript')) return 'typescript';
+  if (name.includes('python')) return 'python';
+  if (name.includes('java') && !name.includes('javascript')) return 'java';
+  if (name.includes('c++') || name.includes('cpp')) return 'cpp';
+  if (name.includes('gcc') && name.includes('c') && !name.includes('c++')) return 'c';
+  if (name.includes('go')) return 'go';
+  if (name.includes('rust')) return 'rust';
+  if (name.includes('ruby')) return 'ruby';
+  if (name.includes('php')) return 'php';
+  if (name.includes('swift')) return 'swift';
+  if (name.includes('kotlin')) return 'kotlin';
+  if (name.includes('scala')) return 'scala';
+  if (name.includes('c#') || name.includes('csharp')) return 'csharp';
+  
+  return 'javascript'; // safe default
+};
 
 const ProblemDetailPage = () => {
   const { id } = useParams<{ id: string }>();
-  const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState("description");
+  const [language, setLanguage] = useState<string>("javascript");
   const [code, setCode] = useState("");
-  const [language, setLanguage] = useState<string>("");
-  const [output, setOutput] = useState<null | {
-    type: "run" | "submit";
-    results: RunResult[];
-    status?: string;
-    passedCount?: number;
-  }>(null);
-  const editorRef = useRef<any>(null);
-
-  // Fetch problem details
-  const { data: problem, isLoading: problemLoading } = useQuery<Problem>({
-    queryKey: ["problem", id],
-    queryFn: () => getProblemById(id!),
-    enabled: !!id,
-  });
-
+  const [activeBottomTab, setActiveBottomTab] = useState<"testcase" | "result">("testcase");
+  const [activeCaseIndex, setActiveCaseIndex] = useState(0);
+  const [customInput, setCustomInput] = useState("");
+  const [customOutput, setCustomOutput] = useState("");
+  const [isCustomInputActive, setIsCustomInputActive] = useState(false);
+  const [testResults, setTestResults] = useState<any[]>([]);
+  
+  // Editor customization states
+  const [fontSize, setFontSize] = useState(14);
+  const [pageTheme, setPageTheme] = useState<'dark' | 'light'>('dark');
+  const [intelliSenseEnabled, setIntelliSenseEnabled] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isBottomPanelOpen, setIsBottomPanelOpen] = useState(true);
+  const [editorRef, setEditorRef] = useState<any>(null); // Store editor instance
+  
   // Fetch languages
-  const { data: languagesData } = useQuery({
-    queryKey: ["languages"],
-    queryFn: getLanguages,
-  });
+  const { data: languagesData } = useLanguages();
+  const rawLanguages = languagesData || [];
+  
+  // Filter to only backend-supported languages
+  const languages = useMemo(() => {
+    if (!rawLanguages || rawLanguages.length === 0) return [];
+    
+    return rawLanguages.filter((lang: any) => {
+      const langId = typeof lang.id === 'string' ? parseInt(lang.id) : lang.id;
+      return SUPPORTED_LANGUAGE_IDS.has(langId);
+    });
+  }, [rawLanguages]);
+  
+  // Fetch problem details
+  const { data: problem, isLoading } = useProblem(id!);
 
-  // Fetch submissions for this problem
-  const { data: submissionsData } = useQuery({
-    queryKey: ["submissions", id],
-    queryFn: () => getMySubmissions({ problemId: id }),
-    enabled: !!id,
-  });
+  // Mutations
+  const runCodeMutation = useRunCode(id!);
+  const submitCodeMutation = useSubmitCode(id!);
+  const addBookmarkMut = useAddBookmark();
+  const removeBookmarkMut = useRemoveBookmark();
 
-  const rawLangs = (() => {
-    if (!languagesData) return [];
-    if (Array.isArray(languagesData)) return languagesData;
-    const nested = languagesData?.data?.languages || languagesData?.languages
-      || languagesData?.data || languagesData?.items;
-    if (Array.isArray(nested)) return nested;
-    return [];
-  })();
-
-  const languages: Language[] = rawLangs
-    .map(normalizeLanguage)
-    .filter((lang): lang is Language => lang !== null && lang.isActive);
-
-  const submissions = Array.isArray(submissionsData) ? submissionsData :
-    (submissionsData?.submissions || submissionsData?.items || []);
-
-  // Set default language
+  // Update test results when run code mutation succeeds
   useEffect(() => {
-    if (languages.length > 0 && !language) {
-      const preferred = languages.find(l => l.value === 'javascript')
-        || languages.find(l => l.value === 'python')
-        || languages[0];
-      setLanguage(preferred.value);
+    if (runCodeMutation.data) {
+      setTestResults(runCodeMutation.data.testResults || []);
+      setActiveBottomTab("result");
+    }
+  }, [runCodeMutation.data]);
+
+  // Update test results when submit code mutation succeeds (includes hidden test cases)
+  useEffect(() => {
+    if (submitCodeMutation.data) {
+      setTestResults(submitCodeMutation.data.results || submitCodeMutation.data.testResults || []);
+      setActiveBottomTab("result");
+    }
+  }, [submitCodeMutation.data]);
+
+  // Set initial code when problem loads
+  useEffect(() => {
+    if (problem && language) {
+      // Always use boilerplate since backend only has one starterCode (not per-language)
+      setCode(getBoilerplate(language));
+    }
+  }, [problem]);
+
+  // Update boilerplate when language changes
+  useEffect(() => {
+    if (language) {
+      setCode(getBoilerplate(language));
+    }
+  }, [language]);
+
+  // Set initial language when languages load
+  useEffect(() => {
+    if (languages.length > 0) {
+      // If current language is undefined or not in the list, set to first available
+      const isValidLanguage = languages.find((l: any) => getLanguageSlug(l) === language);
+      if (!language || !isValidLanguage) {
+        const initialLang = getLanguageSlug(languages[0]);
+        setLanguage(initialLang);
+      }
+    } else if (!language) {
+      setLanguage('javascript');
     }
   }, [languages, language]);
 
-  // Set starter code
+  // Keyboard shortcuts
   useEffect(() => {
-    if (problem?.starterCode) {
-      setCode(problem.starterCode);
-    }
-  }, [problem?.starterCode]);
-
-  // Run code mutation
-  const runMutation = useMutation({
-    mutationFn: () => runCode(id!, code, language),
-    onSuccess: (data) => {
-      const resultData = data;
-      if (!resultData) {
-        toast.error("Invalid response from server");
+    const handleKeyboard = (e: KeyboardEvent) => {
+      // Ctrl + / : Toggle shortcuts panel
+      if (e.ctrlKey && e.key === '/') {
+        e.preventDefault();
+        setShortcutsDialogOpen(prev => !prev);
         return;
       }
 
-      const testResults = (resultData.testResults || []).map((tr: any) => ({
-        ...tr,
-        executionTime: tr.time,
-        memoryUsed: tr.memory,
-        error: tr.stderr || tr.compileOutput || (tr.passed ? undefined : tr.status),
-      }));
-      const passedCount = resultData.passedCount || 0;
-      const totalCount = resultData.totalCount || 0;
-      const status = resultData.status || 'UNKNOWN';
-
-      setOutput({
-        type: "run",
-        results: testResults,
-        passedCount,
-        status
-      });
-
-      if (status === 'ACCEPTED' || passedCount === totalCount && totalCount > 0) {
-        toast.success(`All ${totalCount} test cases passed!`);
-      } else {
-        toast.error(`${passedCount}/${totalCount} test cases passed`);
-      }
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || "Failed to run code");
-    },
-  });
-
-  // Submit code mutation
-  const submitMutation = useMutation({
-    mutationFn: () => submitCode(id!, code, language),
-    onSuccess: (data) => {
-      const resultData = data;
-      if (!resultData) {
-        toast.error("Invalid response from server");
+      // Ctrl + Enter : Run code
+      if (e.ctrlKey && e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleRun();
         return;
       }
 
-      const testResults = (resultData.testResults || []).map((tr: any) => ({
-        ...tr,
-        testCaseIndex: (tr.testCase || tr.testCaseIndex || 1) - 1,
-        executionTime: tr.time,
-        memoryUsed: tr.memory,
-        error: tr.stderr || tr.compileOutput || (tr.passed ? undefined : tr.status),
-      }));
-      const passedCount = resultData.passedTestCases || 0;
-      const totalCount = resultData.totalTestCases || 0;
-      const status = resultData.status || 'UNKNOWN';
-
-      setOutput({
-        type: "submit",
-        results: testResults,
-        status,
-        passedCount
-      });
-
-      queryClient.invalidateQueries({ queryKey: ["submissions", id] });
-      queryClient.invalidateQueries({ queryKey: ["problem", id] });
-      queryClient.invalidateQueries({ queryKey: ["progress"] });
-
-      if (status === "ACCEPTED") {
-        toast.success("Accepted! All test cases passed 🎉", { duration: 4000 });
-      } else {
-        toast.error(`${status.replace(/_/g, " ")} - ${passedCount}/${totalCount} passed`);
+      // Ctrl + Shift + Enter : Submit code
+      if (e.ctrlKey && e.shiftKey && e.key === 'Enter') {
+        e.preventDefault();
+        handleSubmit();
+        return;
       }
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || "Failed to submit code");
-    },
-  });
 
-  // Bookmark mutations
-  const bookmarkMutation = useMutation({
-    mutationFn: (isBookmarked: boolean) =>
-      isBookmarked ? removeBookmark(id!) : addBookmark(id!),
-    onSuccess: (_, isBookmarked) => {
-      queryClient.invalidateQueries({ queryKey: ["problem", id] });
-      queryClient.invalidateQueries({ queryKey: ["bookmarks"] });
-      toast.success(isBookmarked ? "Bookmark removed" : "Problem bookmarked");
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || "Failed to update bookmark");
-    },
-  });
+      // F11 : Toggle fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+
+      // Esc : Exit fullscreen
+      if (e.key === 'Escape' && isFullscreen) {
+        e.preventDefault();
+        setIsFullscreen(false);
+        return;
+      }
+
+      // Ctrl + Shift + F : Format code
+      if (e.ctrlKey && e.shiftKey && e.key === 'F') {
+        e.preventDefault();
+        handleFormatCode();
+        return;
+      }
+
+      // Ctrl + R : Reset code
+      if (e.ctrlKey && e.key === 'r') {
+        e.preventDefault();
+        handleResetCode();
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyboard);
+    return () => window.removeEventListener('keydown', handleKeyboard);
+  }, [code, language, isFullscreen]); // Dependencies for the handlers
 
   const handleRun = () => {
-    runMutation.mutate();
+    if (!code.trim()) {
+      toast.error("Code cannot be empty");
+      return;
+    }
+
+    if (!language) {
+      toast.error("Please select a language");
+      return;
+    }
+
+    runCodeMutation.mutate({ 
+      code, // Sending user's code as is
+      language: language as string, 
+      customInput: isCustomInputActive ? customInput : undefined 
+    }, {
+      onError: (err: any) => {
+        toast.error(err.message || "Execution Error");
+      }
+    });
   };
 
   const handleSubmit = () => {
-    submitMutation.mutate();
+    if (!code.trim()) {
+      toast.error("Code cannot be empty");
+      return;
+    }
+
+    if (!language) {
+      toast.error("Please select a language");
+      return;
+    }
+
+    submitCodeMutation.mutate({ 
+      code, // Sending user's code as is
+      language: language as string 
+    }, {
+      onSuccess: () => {
+        toast.success("Solution submitted successfully!");
+        if (activeBottomTab !== "result") setActiveBottomTab("result");
+      },
+      onError: (err: any) => {
+        toast.error(err.message || "Submission Failed");
+      }
+    });
   };
 
-  const handleBookmark = () => {
-    bookmarkMutation.mutate(!!(problem as any)?.isBookmarked);
+  const toggleBookmark = () => {
+    if (!problem) return;
+    if (problem.isBookmarked) {
+      removeBookmarkMut.mutate(problem.id);
+    } else {
+      addBookmarkMut.mutate(problem.id);
+    }
   };
 
-  if (problemLoading) {
+  const handleResetCode = () => {
+    setCode(getBoilerplate(language));
+    toast.success("Code reset to boilerplate");
+  };
+
+  // Format code
+  const handleFormatCode = () => {
+    if (editorRef) {
+      editorRef.getAction('editor.action.formatDocument').run().then(() => {
+        toast.success("Code formatted successfully!");
+      });
+    }
+  };
+
+  const handleEditorDidMount = (editor: any) => {
+    setEditorRef(editor);
+  };
+
+  const increaseFontSize = () => setFontSize(prev => Math.min(prev + 2, 30));
+  const decreaseFontSize = () => setFontSize(prev => Math.max(prev - 2, 10));
+  const toggleTheme = () => setPageTheme(prev => prev === 'dark' ? 'light' : 'dark');
+  const toggleFullscreen = () => setIsFullscreen(prev => !prev);
+  const toggleIntelliSense = () => setIntelliSenseEnabled(prev => !prev);
+
+  // Close settings dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (settingsOpen && !target.closest('.settings-dropdown')) {
+        setSettingsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [settingsOpen]);
+
+  // ... (isLoading and !problem checks remain the same) ...
+
+  if (isLoading) {
     return (
       <div className="h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -267,450 +446,796 @@ const ProblemDetailPage = () => {
 
   if (!problem) {
     return (
-      <div className="h-screen flex items-center justify-center">
-        <p className="text-muted-foreground">Problem not found</p>
+      <div className="h-screen flex items-center justify-center text-muted-foreground">
+        Problem not found
       </div>
     );
   }
 
+  // ... (derived state for results remains the same) ...
+
+  const isRunning = runCodeMutation.isPending;
+  const isSubmitting = submitCodeMutation.isPending;
+  const isBookmarking = addBookmarkMut.isPending || removeBookmarkMut.isPending;
+
   return (
-    <div className="h-screen flex flex-col bg-background overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 h-14 border-b border-border bg-card/80 backdrop-blur-sm flex-shrink-0 z-10">
-        <div className="flex items-center gap-4">
-          <Link
-            to="/problems"
-            className="text-muted-foreground hover:text-foreground transition-colors p-1.5 hover:bg-accent rounded-md"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </Link>
-          <div className="flex flex-col">
-            <h1 className="font-semibold text-sm leading-tight">{problem.title}</h1>
-          </div>
-          <DifficultyBadge difficulty={problem.difficulty} />
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-4 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5" />
-              {problem.timeLimit}ms
-            </span>
-            <span className="flex items-center gap-1.5">
-              <MemoryStick className="w-3.5 h-3.5" />
-              {problem.memoryLimit}MB
-            </span>
-          </div>
-          <div className="h-4 w-px bg-border" />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleBookmark}
-            disabled={bookmarkMutation.isPending}
-            className="h-8"
-          >
-            {(problem as any)?.isBookmarked ? (
-              <>
-                <BookmarkCheck className="w-4 h-4 mr-1.5 text-primary" />
-                <span className="text-xs">Saved</span>
-              </>
-            ) : (
-              <>
-                <Bookmark className="w-4 h-4 mr-1.5" />
-                <span className="text-xs">Save</span>
-              </>
-            )}
-          </Button>
-        </div>
-      </div>
+    <div className={`h-screen flex flex-col ${pageTheme === 'light' ? 'bg-gray-50' : 'bg-background'}`}>
 
-      {/* Main Content with Resizable Panels */}
-      <div className="flex-1 overflow-hidden">
-        <PanelGroup direction="horizontal">
-          {/* Left Panel: Problem Description */}
-          <Panel defaultSize={40} minSize={25} className="flex flex-col bg-background">
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
-              <div className="border-b border-border px-5 pt-3 bg-card/50 sticky top-0 z-10 backdrop-blur-sm">
-                <TabsList className="h-9 bg-muted/50">
-                  <TabsTrigger value="description" className="text-xs">Description</TabsTrigger>
-                  <TabsTrigger value="submissions" className="text-xs">
-                    Submissions
-                    {submissions.length > 0 && (
-                      <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px]">
-                        {submissions.length}
-                      </span>
-                    )}
-                  </TabsTrigger>
-                </TabsList>
+      {/* MAIN CONTENT */}
+      <div className="flex flex-1 overflow-hidden">
+
+        {/* LEFT PANEL: Description */}
+        <div className={`w-1/2 border-r overflow-y-auto ${
+          pageTheme === 'light' 
+            ? 'bg-white border-gray-200' 
+            : 'bg-background border-border'
+        }`}>
+          {/* Header inside left panel */}
+          <div className={`px-6 py-4 border-b sticky top-0 z-10 ${
+            pageTheme === 'light' 
+              ? 'bg-white border-gray-200' 
+              : 'bg-background border-border'
+          }`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Link to="/problems" className="text-muted-foreground hover:text-foreground transition-colors">
+                  <ChevronLeft className="w-5 h-5" />
+                </Link>
+                <h1 className={`font-semibold text-lg ${
+                  pageTheme === 'light' ? 'text-gray-900' : ''
+                }`}>{problem.title}</h1>
+                <DifficultyBadge difficulty={problem.difficulty} />
               </div>
-
-              <div className="flex-1 overflow-y-auto">
-                <TabsContent value="description" className="p-5 space-y-5 m-0 pb-10">
-                  {/* Tags */}
-                  {problem.tags && problem.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {problem.tags.map((tag) => (
-                        <span
-                          key={tag.id}
-                          className="px-2.5 py-1 rounded-md text-xs font-medium transition-all hover:scale-105"
-                          style={{
-                            backgroundColor: tag.color + "15",
-                            color: tag.color,
-                            border: `1px solid ${tag.color}30`
-                          }}
-                        >
-                          {tag.name}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Description */}
-                  <div className="prose prose-sm dark:prose-invert max-w-none">
-                    <div className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap">
-                      {problem.description}
-                    </div>
-                  </div>
-
-                  {/* Example */}
-                  <div className="space-y-3">
-                    <h3 className="text-sm font-semibold text-foreground">Example:</h3>
-                    <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
-                      <div className="grid grid-cols-2 divide-x divide-border">
-                        <div className="p-4">
-                          <div className="text-xs font-medium text-muted-foreground mb-2">Input</div>
-                          <pre className="text-xs font-mono text-foreground overflow-x-auto">{problem.sampleInput}</pre>
-                        </div>
-                        <div className="p-4">
-                          <div className="text-xs font-medium text-muted-foreground mb-2">Output</div>
-                          <pre className="text-xs font-mono text-foreground overflow-x-auto">{problem.sampleOutput}</pre>
-                        </div>
-                      </div>
-                      {problem.explanation && (
-                        <div className="px-4 py-3 border-t border-border bg-muted/50">
-                          <div className="text-xs font-medium text-muted-foreground mb-1.5">Explanation</div>
-                          <p className="text-xs text-foreground/80 leading-relaxed">{problem.explanation}</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Constraints */}
-                  <div>
-                    <h3 className="text-sm font-semibold text-foreground mb-2">Constraints:</h3>
-                    <div className="rounded-lg border border-border bg-muted/30 p-4">
-                      <pre className="text-xs font-mono text-foreground/80 whitespace-pre-wrap leading-relaxed">
-                        {problem.constraints}
-                      </pre>
-                    </div>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="submissions" className="p-5 m-0 pb-10">
-                  {submissions && submissions.length > 0 ? (
-                    <div className="space-y-2">
-                      {submissions.slice(0, 20).map((submission: any) => {
-                        const runTime = submission.runtime ?? submission.executionTime ?? submission.time;
-                        const memory = submission.memoryUsed ?? submission.memory;
-                        const dateVal = submission.submittedAt || submission.createdAt;
-
-                        return (
-                        <div
-                          key={submission.id}
-                          className="rounded-lg border border-border bg-card p-3.5 hover:bg-accent/50 transition-all cursor-pointer group"
-                          onClick={() => {
-                            setCode(submission.code);
-                            setLanguage(submission.language);
-                            toast.info("Loaded submission code into editor");
-                          }}
-                        >
-                          <div className="flex items-center justify-between mb-2">
-                            <span className={cn(
-                              "text-xs font-semibold px-2 py-1 rounded-md",
-                              submission.status === 'ACCEPTED'
-                                ? 'bg-success/10 text-success'
-                                : 'bg-destructive/10 text-destructive'
-                            )}>
-                              {submission.status === 'ACCEPTED' ? (
-                                <><CheckCircle2 className="w-3 h-3 inline mr-1" />Accepted</>
-                              ) : (
-                                <><XCircle className="w-3 h-3 inline mr-1" />{submission.status}</>
-                              )}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              {dateVal && !isNaN(new Date(dateVal).getTime()) 
-                                ? new Date(dateVal).toLocaleString() 
-                                : "—"}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                            <span className="capitalize">{submission.language}</span>
-                            {runTime !== undefined && runTime !== null && (
-                              <span className="flex items-center gap-1">
-                                <Clock className="w-3 h-3" />
-                                {runTime}ms
-                              </span>
-                            )}
-                            {memory !== undefined && memory !== null && (
-                              <span className="flex items-center gap-1">
-                                <MemoryStick className="w-3 h-3" />
-                                {memory}KB
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      )})}
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center py-12 text-center">
-                      <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
-                        <Send className="w-5 h-5 text-muted-foreground" />
-                      </div>
-                      <p className="text-sm font-medium text-foreground">No submissions yet</p>
-                      <p className="text-xs text-muted-foreground mt-1">Submit your solution to see results here</p>
-                    </div>
-                  )}
-                </TabsContent>
-              </div>
-            </Tabs>
-          </Panel>
-
-          <PanelResizeHandle className="w-1.5 flex items-center justify-center bg-border/40 hover:bg-primary/20 transition-colors cursor-col-resize group z-50">
-            <GripVertical className="h-4 w-4 text-muted-foreground/50 group-hover:text-primary transition-colors" />
-          </PanelResizeHandle>
-
-          <Panel defaultSize={60} minSize={25}>
-            <PanelGroup direction="vertical">
-              {/* Top Half: Code Editor */}
-              <Panel defaultSize={60} minSize={10} className="flex flex-col min-h-0 bg-[#1e1e1e]">
-                {/* Editor Toolbar */}
-                <div className="flex items-center justify-between px-4 h-10 bg-[#1e1e1e] border-b border-white/5 flex-shrink-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium text-green-500 flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                      Code
-                    </span>
-                    <div className="w-px h-3.5 bg-white/10 mx-1" />
-                    <Select value={String(language)} onValueChange={setLanguage}>
-                      <SelectTrigger className="w-auto h-6 text-xs bg-transparent border-none text-muted-foreground hover:text-foreground focus:ring-0 p-0 gap-1.5">
-                        <SelectValue placeholder="Select Language" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {languages.map((l: any) => (
-                          <SelectItem key={String(l.value || l.id || l)} value={String(l.value || l.id || l)} className="text-xs">
-                            {l.label || l.name || l}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <Button 
-                      size="sm" 
-                      onClick={handleRun} 
-                      disabled={!language || runMutation.isPending || submitMutation.isPending}
-                      variant="secondary"
-                      className="h-7 text-xs bg-white hover:bg-[#4e4e4e] text-foreground border-transparent gap-1.5"
-                    >
-                      {runMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3 fill-current" />}
-                      Run
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      onClick={handleSubmit} 
-                      disabled={!language || runMutation.isPending || submitMutation.isPending}
-                      className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white border-transparent gap-1.5"
-                    >
-                      {submitMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-                      Submit
-                    </Button>
-                  </div>
+              <div className="flex items-center gap-3">
+                <div className="text-xs text-muted-foreground font-mono">
+                  {problem.timeLimit}ms | {problem.memoryLimit}MB
                 </div>
-
-                {/* Monaco Editor */}
-                <div className="flex-1 relative min-h-0">
-                  <Editor
-                    height="100%"
-                    language={MONACO_LANGUAGE_MAP[language] || language}
-                    value={code}
-                    onChange={(v) => setCode(v || "")}
-                    onMount={(editor) => {
-                      editorRef.current = editor;
-                    }}
-                    theme="vs-dark"
-                    options={{
-                      fontSize: 14,
-                      fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', monospace",
-                      fontLigatures: true,
-                      minimap: { enabled: false },
-                      scrollBeyondLastLine: false,
-                      padding: { top: 10, bottom: 10 },
-                      lineNumbers: "on",
-                      renderLineHighlight: "all",
-                      automaticLayout: true,
-                      tabSize: 2,
-                      insertSpaces: true,
-                      wordWrap: "on",
-                      wrappingIndent: "indent",
-                      smoothScrolling: true,
-                      cursorBlinking: "smooth",
-                      cursorSmoothCaretAnimation: "on",
-                      bracketPairColorization: { enabled: true },
-                      formatOnPaste: true,
-                      formatOnType: true,
-                      suggestOnTriggerCharacters: true,
-                      acceptSuggestionOnEnter: "on",
-                      quickSuggestions: true,
-                    }}
+                <button
+                  onClick={toggleBookmark}
+                  disabled={isBookmarking}
+                  className={`p-2 rounded-full transition-colors hover:bg-muted ${
+                    problem.isBookmarked 
+                      ? "text-yellow-500" 
+                      : "text-muted-foreground"
+                  }`}
+                  title={problem.isBookmarked ? "Remove Bookmark" : "Add Bookmark"}
+                >
+                  <Bookmark 
+                    className={`w-5 h-5 transition-all ${
+                      problem.isBookmarked ? "fill-current scale-110" : "scale-100"
+                    }`} 
                   />
-                </div>
-              </Panel>
+                </button>
+              </div>
+            </div>
+          </div>
 
-              <PanelResizeHandle className="h-1.5 flex items-center justify-center bg-[#1e1e1e] border-t border-b border-white/5 hover:bg-white/5 transition-colors cursor-row-resize group z-50">
-                <GripHorizontal className="h-3 w-3 text-muted-foreground/30 group-hover:text-primary transition-colors" />
-              </PanelResizeHandle>
+          {/* Content */}
+          <div className="px-6 py-6 space-y-6">
+            {/* Description */}
+            <div>
 
-              {/* Bottom Half: Testcase / Result */}
-              <Panel defaultSize={40} minSize={10} className="flex flex-col bg-[#1e1e1e]">
-                {/* Action Bar */}
-                <div className="flex items-center justify-between px-4 h-9 bg-[#1e1e1e] border-b border-white/5 flex-shrink-0">
-                  <div className="flex items-center gap-4 h-full">
-                    <button 
-                      className={cn(
-                        "flex items-center gap-2 text-xs font-medium transition-colors h-full border-b-[1.5px] px-1",
-                        !output ? "text-white" : "text-muted-foreground border-transparent hover:text-foreground"
-                      )}
-                      onClick={() => setOutput(null)}
-                    >
-                      <div className={cn(
-                        "w-3.5 h-3.5 rounded flex items-center justify-center ",
-                        !output ? "text-white" : ""
-                      )}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                      </div>
-                      Testcase
-                    </button>
-<button 
-  className={cn(
-    "flex items-center gap-2 text-xs font-medium transition-colors h-full border-b-[1.5px] px-1",
-    output 
-      ? "text-white border-white" 
-      : "text-muted-foreground border-transparent hover:text-foreground"
-  )}
-  onClick={() => !output && toast.info("Run code to see results")}
->
-  <div className={cn(
-    "w-3.5 h-3.5 rounded flex items-center justify-center",
-    output ? "text-white" : "bg-muted/50 text-muted-foreground"
-  )}>
-    <span className="text-[10px] leading-none font-bold">›_</span>
-  </div>
-  Test Result
-</button>
+              <h2 className="font-bold text-xl mb-4">
+                Problem Description
+              </h2>
+              <div className="prose prose-sm dark:prose-invert max-w-none">
+                <div dangerouslySetInnerHTML={{ __html: problem.description }} />
+              </div>
+            </div>
 
+            {/* Example - Side by Side */}
+
+            <div className="space-y-3">
+              <h3 className="font-semibold text-base">Example</h3>
+              <div className="bg-muted/30 rounded-lg p-4 border border-border/50">
+                <div className="grid grid-cols-2 gap-8">
+                  <div>
+                    <div className="text-muted-foreground mb-2 font-medium text-sm">Input:</div>
+                    <div className="font-mono text-sm text-foreground whitespace-pre-wrap">{problem.sampleInput}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground mb-2 font-medium text-sm">Output:</div>
+                    <div className="font-mono text-sm text-foreground whitespace-pre-wrap">{problem.sampleOutput}</div>
                   </div>
                 </div>
+              </div>
+            </div>
 
-                {/* Console Content */}
-                <div className="flex-1 overflow-hidden relative">
-                  {!output ? (
-                    // Testcase View - Monaco Editor
-                    <div className="h-full w-full">
-                      <Editor
-                        height="100%"
-                        language="plaintext"
-                        value={problem.testCases?.filter((tc: any) => tc.isSample).map((tc: any) => tc.input).join('\n') || ""}
-                        theme="vs-dark"
-                        options={{
-                          fontSize: 14,
-                          fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', monospace",
-                          minimap: { enabled: false },
-                          scrollBeyondLastLine: false,
-                          lineNumbers: "on",
-                          renderLineHighlight: "none", // Cleaner look for test cases
-                          automaticLayout: true,
-                          readOnly: true, // Initially read-only for display
-                          padding: { top: 10, bottom: 10 },
-                          cursorStyle: "line",
-                          hideCursorInOverviewRuler: true,
-                        }}
-                      />
+            {/* Constraints */}
+            <div className="space-y-2">
+              <h3 className="font-semibold text-base">Constraints</h3>
+              <pre className="bg-muted/30 p-4 rounded-lg border border-border/50 font-mono text-sm text-muted-foreground whitespace-pre-wrap">
+                {problem.constraints}
+              </pre>
+            </div>
+
+            {/* Hint - Collapsible */}
+            <details className="border-2 border-yellow-500/50 rounded-lg bg-yellow-500/5">
+              <summary className="px-4 py-3 cursor-pointer flex items-center gap-2 hover:bg-yellow-500/10 transition-colors rounded-lg">
+                <Lightbulb className="w-4 h-4 text-yellow-500" />
+                <span className="font-medium">Hint</span>
+              </summary>
+              <div className="px-4 pb-3 pt-2 text-sm text-muted-foreground border-t border-yellow-500/20">
+                {problem.hints && problem.hints.length > 0 ? (
+                  <ul className="list-disc list-inside space-y-1">
+                    {problem.hints.map((hint: string, idx: number) => (
+                      <li key={idx}>{hint}</li>
+                    ))}
+                  </ul>
+                ) : problem.hint ? (
+                  <p>{problem.hint}</p>
+                ) : (
+                  <p className="text-muted-foreground/70 italic">No hints available for this problem.</p>
+                )}
+              </div>
+            </details>
+          </div>
+        </div>
+
+        {/* RIGHT PANEL: Editor & Console */}
+        <div className={`${isFullscreen ? 'w-full' : 'w-1/2'} flex flex-col ${
+          pageTheme === 'light' 
+            ? 'bg-gray-100 text-gray-900' 
+            : 'bg-[#1e1e1e] text-white'
+        }`}>
+
+          {/* TOOLBAR */}
+          <div className={`h-14 flex items-center justify-between px-4 border-b shadow-sm relative z-10 ${
+            pageTheme === 'light'
+              ? 'bg-white border-gray-300'
+              : 'bg-[#1e1e1e] border-white/10'
+          }`}>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[#2d2d2d] rounded-md border border-white/5 shadow-inner">
+                <Monitor className="w-4 h-4 text-primary" />
+                <Select 
+                  value={language || "javascript"} 
+                  onValueChange={(val) => {
+                    if (val && typeof val === 'string') {
+                      setLanguage(val);
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-[140px] h-7 bg-transparent text-white border-transparent focus:ring-0 p-0 text-sm font-medium">
+                    <SelectValue placeholder="Select language" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#2d2d2d] border-white/10 text-white shadow-2xl">
+                    {languages.length > 0 ? (
+                      (() => {
+                        const uniqueLanguages = new Map();
+                        languages.forEach((lang: any) => {
+                          const slug = getLanguageSlug(lang);
+                          if (!uniqueLanguages.has(slug)) {
+                            uniqueLanguages.set(slug, lang);
+                          }
+                        });
+                        
+                        return Array.from(uniqueLanguages.values()).map((lang: any) => {
+                          const langValue = getLanguageSlug(lang);
+                          return (
+                            <SelectItem key={lang.id || langValue} value={langValue} className="hover:bg-white/5 focus:bg-white/10">
+                              {lang.name}
+                            </SelectItem>
+                          );
+                        });
+                      })()
+                    ) : (
+                      <>
+                        <SelectItem value="javascript">JavaScript</SelectItem>
+                        <SelectItem value="python">Python</SelectItem>
+                        <SelectItem value="java">Java</SelectItem>
+                        <SelectItem value="cpp">C++</SelectItem>
+                        <SelectItem value="c">C</SelectItem>
+                      </>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <button
+                onClick={handleResetCode}
+                className="p-2 text-gray-400 hover:text-white hover:bg-white/5 rounded-md transition-all duration-200 group relative"
+                title="Reset to starter code"
+              >
+                <RotateCcw className="w-4 h-4 group-hover:rotate-[-45deg] transition-transform duration-300" />
+              </button>
+              
+              {/* Settings Button */}
+              <div className="relative settings-dropdown">
+                <button
+                  onClick={() => setSettingsOpen(!settingsOpen)}
+                  className="p-2 text-gray-400 hover:text-white hover:bg-white/5 rounded-md transition-all duration-200"
+                  title="Editor Settings"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+                
+                {/* Settings Dropdown - Opens to the LEFT */}
+                {settingsOpen && (
+                  <div className="absolute top-12 left-0 w-64 bg-[#2d2d2d]/95 backdrop-blur-sm border border-white/10 rounded-lg shadow-2xl z-50 animate-in slide-in-from-top-2">
+                    <div className="p-3 space-y-3">
+                      <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                        <h3 className="font-semibold text-xs">Editor Settings</h3>
+                        <button onClick={() => setSettingsOpen(false)} className="text-gray-400 hover:text-white text-lg leading-none">
+                          ×
+                        </button>
+                      </div>
+                      
+                      {/* Font Size */}
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-gray-400 font-medium">Font Size</label>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={decreaseFontSize}
+                            className="p-1.5 bg-[#1e1e1e] hover:bg-[#252525] rounded transition-colors"
+                          >
+                            <Type className="w-3 h-3" />
+                          </button>
+                          <span className="text-xs font-mono flex-1 text-center bg-[#1e1e1e] py-1.5 rounded">{fontSize}px</span>
+                          <button
+                            onClick={increaseFontSize}
+                            className="p-1.5 bg-[#1e1e1e] hover:bg-[#252525] rounded transition-colors"
+                          >
+                            <Type className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                      
+                      {/* Theme */}
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-gray-400 font-medium">Theme</label>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setPageTheme('dark')}
+                            className={`flex-1 p-1.5 rounded flex items-center justify-center gap-1.5 transition-colors text-xs ${
+                              pageTheme === 'dark' 
+                                ? 'bg-primary text-white' 
+                                : 'bg-[#1e1e1e] text-gray-400 hover:bg-[#252525]'
+                            }`}
+                          >
+                            <Moon className="w-3 h-3" />
+                            <span>Dark</span>
+                          </button>
+                          <button
+                            onClick={() => setPageTheme('light')}
+                            className={`flex-1 p-1.5 rounded flex items-center justify-center gap-1.5 transition-colors text-xs ${
+                              pageTheme === 'light' 
+                                ? 'bg-primary text-white' 
+                                : 'bg-[#1e1e1e] text-gray-400 hover:bg-[#252525]'
+                            }`}
+                          >
+                            <Sun className="w-3 h-3" />
+                            <span>Light</span>
+                          </button>
+                        </div>
+                      </div>
+                      
+                      {/* IntelliSense */}
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-gray-400 font-medium">IntelliSense</label>
+                        <button
+                          onClick={toggleIntelliSense}
+                          className={`w-full p-2 rounded flex items-center justify-between transition-colors ${
+                            intelliSenseEnabled 
+                              ? 'bg-yellow-500/20 border border-yellow-500/50' 
+                              : 'bg-[#1e1e1e] border border-white/10'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            {intelliSenseEnabled ? (
+                              <Lightbulb className="w-3 h-3 text-yellow-500" />
+                            ) : (
+                              <LightbulbOff className="w-3 h-3 text-gray-400" />
+                            )}
+                            <span className="text-xs">Suggestions</span>
+                          </div>
+                          <span className={`text-xs font-medium ${
+                            intelliSenseEnabled ? 'text-yellow-500' : 'text-gray-500'
+                          }`}>
+                            {intelliSenseEnabled ? 'ON' : 'OFF'}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Format Code Button */}
+              <button
+                onClick={handleFormatCode}
+                title="Format Code (Ctrl+Shift+F)"
+                className={`p-2 rounded-md transition-colors ${
+                  pageTheme === 'light'
+                    ? 'hover:bg-gray-200 text-gray-700'
+                    : 'hover:bg-[#2d2d2d] text-gray-300'
+                }`}
+              >
+                <Type className="w-4 h-4" />
+              </button>
+
+              {/* Keyboard Shortcuts Button */}
+              <button
+                onClick={() => setShortcutsDialogOpen(true)}
+                title="Keyboard Shortcuts (Ctrl+/)"
+                className={`p-2 rounded-md transition-colors ${
+                  pageTheme === 'light'
+                    ? 'hover:bg-gray-200 text-gray-700'
+                    : 'hover:bg-[#2d2d2d] text-gray-300'
+                }`}
+              >
+                <Keyboard className="w-4 h-4" />
+              </button>
+
+              {/* Fullscreen Toggle Button */}
+              <button
+                onClick={toggleFullscreen}
+                title={isFullscreen ? "Exit Fullscreen (Esc)" : "Fullscreen (F11)"}
+                className={`p-2 rounded-md transition-colors ${
+                  pageTheme === 'light'
+                    ? 'hover:bg-gray-200 text-gray-700'
+                    : 'hover:bg-[#2d2d2d] text-gray-300'
+                }`}
+              >
+                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleRun}
+                disabled={isRunning || isSubmitting}
+                className="flex items-center gap-2 bg-[#2d2d2d] hover:bg-[#3d3d3d] text-gray-200 disabled:opacity-50 px-5 py-1.5 rounded-md text-sm font-medium transition-all duration-200 border border-white/5 shadow-sm active:scale-95"
+              >
+               {isRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+               Run
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={isRunning || isSubmitting}
+                className="flex items-center gap-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white disabled:opacity-50 px-6 py-1.5 rounded-md text-sm font-semibold transition-all duration-200 shadow-md shadow-green-900/20 active:scale-95 border border-green-500/20"
+              >
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                Submit
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 relative overflow-hidden bg-[#1e1e1e]">
+            <div className="absolute inset-0 pointer-events-none border-t border-white/5 z-10" />
+            <Editor
+              height="100%"
+              language={MONACO_LANGUAGE_MAP[language]}
+              value={code}
+              onMount={handleEditorDidMount}
+              onChange={(v) => setCode(v || "")}
+              theme={pageTheme === 'light' ? 'light' : 'vs-dark'}
+              options={{
+                minimap: { enabled: false },
+                fontSize: fontSize,
+                fontFamily: "'JetBrains Mono', 'Fira Code', 'Menlo', 'Monaco', 'Courier New', monospace",
+                lineHeight: 24,
+                letterSpacing: 0.5,
+                automaticLayout: true,
+                padding: { top: 20, bottom: 20 },
+                scrollBeyondLastLine: false,
+                cursorBlinking: 'smooth',
+                cursorSmoothCaretAnimation: 'on',
+                smoothScrolling: true,
+                roundedSelection: true,
+                renderLineHighlight: 'all',
+                formatOnPaste: true,
+                formatOnType: true,
+                renderValidationDecorations: 'on', // Enable syntax error highlighting
+                lineNumbersMinChars: 3,
+                scrollbar: {
+                  vertical: 'visible',
+                  verticalScrollbarSize: 8,
+                  horizontalScrollbarSize: 8,
+                  useShadows: false,
+                },
+                // IntelliSense settings
+                suggestOnTriggerCharacters: intelliSenseEnabled,
+                quickSuggestions: intelliSenseEnabled ? {
+                  other: true,
+                  comments: false,
+                  strings: false,
+                } : false,
+                parameterHints: {
+                  enabled: intelliSenseEnabled,
+                },
+                suggest: {
+                  showKeywords: intelliSenseEnabled,
+                  showSnippets: intelliSenseEnabled,
+                },
+              }} 
+            />
+          </div>
+
+          {/* BOTTOM PANEL - LeetCode Style */}
+          <div className={`border-t flex flex-col transition-all duration-300 ease-in-out ${
+            isBottomPanelOpen ? 'h-80' : 'h-10'
+          } ${
+            pageTheme === 'light'
+              ? 'bg-white border-gray-300'
+              : 'bg-[#1e1e1e] border-white/10'
+          }`}>
+            
+            {/* TABS HEADER */}
+            <div className={`flex items-center justify-between px-2 border-b text-sm font-medium ${
+              pageTheme === 'light'
+                ? 'bg-gray-50 border-gray-300'
+                : 'bg-[#1e1e1e] border-white/10'
+            }`}>
+              <div className="flex">
+                <button
+                  onClick={() => {
+                    setActiveBottomTab("testcase");
+                    if (!isBottomPanelOpen) setIsBottomPanelOpen(true);
+                  }}
+                  className={`px-4 py-2 border-b-2 transition-colors flex items-center gap-2 ${
+                    activeBottomTab === "testcase" && isBottomPanelOpen
+                      ? pageTheme === 'light'
+                        ? "border-primary text-gray-900" 
+                        : "border-white text-white"
+                      : pageTheme === 'light'
+                        ? "border-transparent text-gray-500 hover:text-gray-700"
+                        : "border-transparent text-gray-400 hover:text-gray-300"
+                  }`}
+                >
+                  Testcase
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveBottomTab("result");
+                    if (!isBottomPanelOpen) setIsBottomPanelOpen(true);
+                  }}
+                  className={`px-4 py-2 border-b-2 transition-colors flex items-center gap-2 ${
+                    activeBottomTab === "result" && isBottomPanelOpen
+                      ? pageTheme === 'light'
+                        ? "border-primary text-gray-900" 
+                        : "border-white text-white"
+                      : pageTheme === 'light'
+                        ? "border-transparent text-gray-500 hover:text-gray-700"
+                        : "border-transparent text-gray-400 hover:text-gray-300"
+                  }`}
+                >
+                  Test Result
+                </button>
+              </div>
+
+              {/* Toggle Panel Button */}
+              <button
+                onClick={() => setIsBottomPanelOpen(!isBottomPanelOpen)}
+                className={`p-1 rounded hover:bg-white/10 transition-colors ${
+                  pageTheme === 'light' ? 'text-gray-500 hover:bg-gray-200' : 'text-gray-400'
+                }`}
+                title={isBottomPanelOpen ? "Collapse Panel" : "Expand Panel"}
+              >
+                {isBottomPanelOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+              </button>
+            </div>
+
+
+            {/* PANEL CONTENT */}
+            {isBottomPanelOpen && (
+              <div className="flex-1 overflow-y-auto p-4">
+              
+              {/* === TESTCASES TAB === */}
+              {activeBottomTab === "testcase" && (
+                <div className="space-y-3">
+                  {/* Case Selector */}
+                  <div className="flex items-center gap-2">
+                    {(problem.testCases || [])
+                      .map((tc: any, i: number) => (
+                        <button
+                          key={tc.id || i}
+                          onClick={() => {
+                            setActiveCaseIndex(i);
+                            setIsCustomInputActive(false);
+                          }}
+                          className={`px-3 py-1.5 rounded text-sm transition-colors ${
+                            activeCaseIndex === i && !isCustomInputActive
+                              ? pageTheme === 'light'
+                                ? "bg-primary/10 text-primary border border-primary/20"
+                                : "bg-white/10 text-white"
+                              : pageTheme === 'light'
+                                ? "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                                : "text-gray-400 hover:bg-white/5 hover:text-gray-300"
+                          }`}
+                        >
+                          Case {i + 1}
+                        </button>
+                      ))}
+                    <button
+                      onClick={() => setIsCustomInputActive(true)}
+                      className={`px-3 py-1.5 rounded text-sm transition-colors ${
+                        isCustomInputActive
+                          ? pageTheme === 'light'
+                            ? "bg-primary/10 text-primary border border-primary/20"
+                            : "bg-white/10 text-white"
+                          : pageTheme === 'light'
+                            ? "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                            : "text-gray-400 hover:bg-white/5 hover:text-gray-300"
+                      }`}
+                    >
+                      Custom Testcase
+                    </button>
+                  </div>
+
+                  {/* Test Case Content */}
+                  {!isCustomInputActive ? (
+                    (() => {
+                      const samples = (problem.testCases || []);
+                      const activeCase = samples[activeCaseIndex];
+                      if (!activeCase) return <div className="text-gray-500 text-sm">No sample cases available</div>;
+                      
+                      return (
+                        <div className="space-y-3">
+                          <div>
+                            <div className={`text-xs mb-2 font-medium ${
+                              pageTheme === 'light' ? 'text-gray-600' : 'text-gray-400'
+                            }`}>Input:</div>
+                            <div className={`p-3 rounded border text-sm font-mono whitespace-pre-wrap ${
+                              pageTheme === 'light'
+                                ? 'bg-gray-50 border-gray-300 text-gray-900'
+                                : 'bg-[#2d2d2d] border-white/10 text-gray-200'
+                            }`}>
+                              {activeCase.input}
+                            </div>
+                          </div>
+                          <div>
+                            <div className={`text-xs mb-2 font-medium ${
+                              pageTheme === 'light' ? 'text-gray-600' : 'text-gray-400'
+                            }`}>Output:</div>
+                            <div className={`p-3 rounded border text-sm font-mono whitespace-pre-wrap ${
+                              pageTheme === 'light'
+                                ? 'bg-gray-50 border-gray-300 text-gray-900'
+                                : 'bg-[#2d2d2d] border-white/10 text-gray-200'
+                            }`}>
+                              {activeCase.output}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()
+                  ) : (
+                    <div className="space-y-3">
+                      {/* Input and Output Side by Side */}
+                      <div className="grid grid-cols-2 gap-4">
+                        {/* Input */}
+                        <div>
+                          <div className={`text-xs mb-2 font-medium ${
+                            pageTheme === 'light' ? 'text-gray-600' : 'text-gray-400'
+                          }`}>Input:</div>
+                          <textarea
+                            value={customInput}
+                            onChange={(e) => setCustomInput(e.target.value)}
+                            placeholder="Enter your test input..."
+                            className={`w-full h-[200px] p-3 rounded border text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 ${
+                              pageTheme === 'light'
+                                ? 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-400'
+                                : 'bg-[#2d2d2d] border-white/10 text-gray-200 placeholder-gray-500'
+                            }`}
+                          />
+                        </div>
+                        
+                        {/* Expected Output */}
+                        <div>
+                          <div className={`text-xs mb-2 font-medium ${
+                            pageTheme === 'light' ? 'text-gray-600' : 'text-gray-400'
+                          }`}>Expected Output:</div>
+                          <textarea
+                            value={customOutput}
+                            onChange={(e) => setCustomOutput(e.target.value)}
+                            placeholder="Enter expected output..."
+                            className={`w-full h-[200px] p-3 rounded border text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 ${
+                              pageTheme === 'light'
+                                ? 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-400'
+                                : 'bg-[#2d2d2d] border-white/10 text-gray-200 placeholder-gray-500'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* === TEST RESULT TAB === */}
+              {activeBottomTab === "result" && (
+                <div className="space-y-4">
+                  {!testResults || testResults.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-40 text-gray-400">
+                      <p className="text-sm">You must run your code first</p>
                     </div>
                   ) : (
-                    // Test Result View
-                    <div className="h-full overflow-y-auto p-4 custom-scrollbar">
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-3 mb-2">
-                           <h3 className={cn(
-                            "text-lg font-semibold",
-                            output.status === 'ACCEPTED' || output.status === 'PASSED' ? "text-green-500" : "text-red-500"
-                          )}>
-                            {output.status === 'ACCEPTED' ? 'Accepted' : (output.status || 'Wrong Answer')}
-                          </h3>
-                          <span className="text-xs text-muted-foreground mt-1">
-                            Runtime: {output.results[0]?.executionTime || '0'}ms
-                          </span>
+                    <>
+                      {/* LeetCode-Style Status Header */}
+                      <div className={`pb-4 border-b ${
+                        pageTheme === 'light' ? 'border-gray-300' : 'border-white/10'
+                      }`}>
+                        {/* Status and Runtime */}
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                            {testResults.every((r: any) => r.passed) ? (
+                              <div className={`text-lg font-semibold ${
+                                pageTheme === 'light' ? 'text-green-600' : 'text-green-500'
+                              }`}>Accepted</div>
+                            ) : testResults.some((r: any) => r.stderr || r.error) ? (
+                              <div className={`text-lg font-semibold ${
+                                pageTheme === 'light' ? 'text-red-600' : 'text-red-500'
+                              }`}>Runtime Error</div>
+                            ) : (
+                              <div className={`text-lg font-semibold ${
+                                pageTheme === 'light' ? 'text-red-600' : 'text-red-500'
+                              }`}>Wrong Answer</div>
+                            )}
+                            {testResults.some((r: any) => r.time) && (
+                              <div className={`text-sm ${
+                                pageTheme === 'light' ? 'text-gray-600' : 'text-gray-400'
+                              }`}>
+                                Runtime: {Math.max(...testResults.map((r: any) => r.time || 0))} ms
+                              </div>
+                            )}
+                          </div>
                         </div>
 
-                        <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide">
-                          {output.results.map((r, i) => (
-                            <button
+                        {/* Compact Case Pills - LeetCode Style */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          {testResults.map((result: any, i: number) => (
+                            <div
                               key={i}
-                              className={cn(
-                                "px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors border",
-                                r.passed 
-                                  ? "bg-green-500/10 border-green-500/20 text-green-500 hover:bg-green-500/20" 
-                                  : "bg-red-500/10 border-red-500/20 text-red-500 hover:bg-red-500/20"
-                              )}
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                                result.passed
+                                  ? pageTheme === 'light'
+                                    ? 'bg-green-50 text-green-700 border border-green-200'
+                                    : 'bg-green-500/10 text-green-400 border border-green-500/20'
+                                  : pageTheme === 'light'
+                                    ? 'bg-red-50 text-red-700 border border-red-200'
+                                    : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                              }`}
                             >
-                              <div className={cn("w-1.5 h-1.5 rounded-full", r.passed ? "bg-green-500" : "bg-red-500")} />
-                              Case {i + 1}
-                            </button>
+                              {result.passed ? (
+                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                              ) : (
+                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                </svg>
+                              )}
+                              <span>Case {i + 1}</span>
+                              {result.isHidden && (
+                                <span className="text-xs opacity-70">(Hidden)</span>
+                              )}
+                            </div>
                           ))}
                         </div>
+                      </div>
 
-                        {output.results.map((r, i) => (
-                          <div key={i} className="space-y-3">
-                            {r.error ? (
-                              <div className="bg-red-500/10 border border-red-500/20 p-3 rounded-lg text-xs text-red-400 font-mono whitespace-pre-wrap">
-                                {r.error}
+                      {/* Detailed Test Results */}
+                      <div className="space-y-3">
+                        {testResults.map((result: any, i: number) => (
+                          <div
+                            key={i}
+                            className={`p-4 rounded border ${
+                              result.passed
+                                ? "bg-green-500/5 border-green-500/30"
+                                : "bg-red-500/5 border-red-500/30"
+                            }`}
+                          >
+                            {/* Header - with case indicator */}
+                            <div className="flex items-center justify-between mb-3">
+                              <div className={`flex items-center gap-2 font-semibold ${
+                                result.passed 
+                                  ? pageTheme === 'light' ? 'text-green-600' : 'text-green-500'
+                                  : pageTheme === 'light' ? 'text-red-600' : 'text-red-500'
+                              }`}>
+                                {result.passed ? (
+                                  <span className="flex items-center gap-1.5">
+                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                    </svg>
+                                    Case {i + 1}
+                                    {result.isHidden && <span className="text-xs opacity-70 ml-1">(Hidden)</span>}
+                                  </span>
+                                ) : (
+                                  <span className="flex items-center gap-1.5">
+                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                    </svg>
+                                    Case {i + 1}
+                                    {result.isHidden && <span className="text-xs opacity-70 ml-1">(Hidden)</span>}
+                                  </span>
+                                )}
                               </div>
-                            ) : (
-                              <>
-                                <div className="grid grid-cols-1 gap-1">
-                                   <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">Input</div>
-                                   <div className="bg-[#2d2d2d] p-2.5 rounded text-xs font-mono text-foreground/90 whitespace-pre-wrap">
-                                    {r.input || "Hidden"}
-                                   </div>
+                              <div className={`text-xs px-2 py-1 rounded font-medium ${
+                                result.passed
+                                  ? pageTheme === 'light'
+                                    ? 'bg-green-100 text-green-700'
+                                    : 'bg-green-500/20 text-green-400'
+                                  : pageTheme === 'light'
+                                    ? 'bg-red-100 text-red-700'
+                                    : 'bg-red-500/20 text-red-400'
+                              }`}>
+                                {result.passed ? 'Passed' : 'Failed'}
+                              </div>
+                              {result.time && (
+                                <span className={`text-xs ${
+                                  pageTheme === 'light' ? 'text-gray-600' : 'text-gray-400'
+                                }`}>Runtime: {result.time}ms</span>
+                              )}
+                            </div>
+
+                            {/* Input */}
+                            <div className="mb-3">
+                              <div className={`text-xs mb-1.5 font-medium ${
+                                pageTheme === 'light' ? 'text-gray-600' : 'text-gray-400'
+                              }`}>Input</div>
+                              <div className={`p-2.5 rounded text-xs font-mono whitespace-pre-wrap border ${
+                                pageTheme === 'light'
+                                  ? 'bg-gray-50 border-gray-300 text-gray-900'
+                                  : 'bg-[#2d2d2d] border-white/10 text-gray-200'
+                              }`}>
+                                {result.input}
+                              </div>
+                            </div>
+
+                            {/* Output Comparison */}
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <div className={`text-xs mb-1.5 font-medium ${
+                                  pageTheme === 'light' ? 'text-gray-600' : 'text-gray-400'
+                                }`}>Your Output</div>
+                                <div className={`p-2.5 rounded text-xs font-mono whitespace-pre-wrap border ${
+                                  result.passed 
+                                    ? pageTheme === 'light'
+                                      ? "bg-gray-50 border-gray-300 text-gray-900"
+                                      : "bg-[#2d2d2d] border-white/10 text-gray-200" 
+                                    : pageTheme === 'light'
+                                      ? "bg-red-50 border-red-300 text-red-700"
+                                      : "bg-red-500/10 border-red-500/30 text-red-300"
+                                }`}>
+                                  {result.stdout || result.actualOutput || "(empty)"}
                                 </div>
-                                <div className="grid grid-cols-1 gap-1">
-                                   <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">Output</div>
-                                   <div className={cn(
-                                     "p-2.5 rounded text-xs font-mono text-foreground/90 whitespace-pre-wrap",
-                                     r.passed ? "bg-[#2d2d2d]" : "bg-red-500/10 border border-red-500/20"
-                                   )}>
-                                    {r.actualOutput}
-                                   </div>
+                              </div>
+                              <div>
+                                <div className={`text-xs mb-1.5 font-medium ${
+                                  pageTheme === 'light' ? 'text-gray-600' : 'text-gray-400'
+                                }`}>Expected</div>
+                                <div className={`p-2.5 rounded text-xs font-mono whitespace-pre-wrap border ${
+                                  pageTheme === 'light'
+                                    ? 'bg-gray-50 border-gray-300 text-gray-900'
+                                    : 'bg-[#2d2d2d] border-white/10 text-gray-200'
+                                }`}>
+                                  {result.expectedOutput || result.expected || "(empty)"}
                                 </div>
-                                <div className="grid grid-cols-1 gap-1">
-                                   <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">Expected</div>
-                                   <div className="bg-[#2d2d2d] p-2.5 rounded text-xs font-mono text-foreground/90 whitespace-pre-wrap">
-                                    {r.expectedOutput}
-                                   </div>
+                              </div>
+                            </div>
+
+                            {/* Error Message */}
+                            {result.stderr && (
+                              <div className="mt-3">
+                                <div className="text-red-400 text-xs mb-1.5 font-medium">Error</div>
+                                <div className="bg-red-500/10 text-red-300 p-2.5 rounded text-xs font-mono whitespace-pre-wrap border border-red-500/30">
+                                  {result.stderr}
                                 </div>
-                              </>
+                              </div>
                             )}
                           </div>
-                        ))[0]} 
+                        ))}
                       </div>
-                    </div>
+                    </>
                   )}
                 </div>
-              </Panel>
-            </PanelGroup>
-          </Panel>
-        </PanelGroup>
+              )}
+            </div>
+            )}
+          </div>
+        </div>
       </div>
+      <KeyboardShortcutsDialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen} />
     </div>
   );
 };

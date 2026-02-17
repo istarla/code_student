@@ -1,9 +1,10 @@
 import { Link } from "react-router-dom";
-import { Calendar, Clock, Users, Trophy, Lock, Globe } from "lucide-react";
+import { Calendar, Clock, Users, Trophy, Lock, Globe, CheckCircle2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useContests } from "@/hooks/useApi";
+import { useContests, useRegisterForContest } from "@/hooks/useApi";
+import { toast } from "sonner";
 
 const statusStyle: Record<string, string> = {
   LIVE: "bg-success/15 text-success border-success/30 animate-pulse-glow",
@@ -13,6 +14,7 @@ const statusStyle: Record<string, string> = {
 
 const ContestsPage = () => {
   const { data, isLoading, error } = useContests();
+  const registerMut = useRegisterForContest();
 
   // Handle array or object responses and filter out DRAFT exams
   const allExams = Array.isArray(data) ? data : data?.contests ?? data?.data ?? [];
@@ -24,7 +26,7 @@ const ContestsPage = () => {
     return (
       <div className="p-6 max-w-7xl mx-auto space-y-6">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Lab Exams</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Contests</h1>
           <p className="text-muted-foreground mt-1">Test your skills with timed coding challenges</p>
         </div>
         <div className="space-y-4">
@@ -39,7 +41,7 @@ const ContestsPage = () => {
   if (error) {
     return (
       <div className="p-6 max-w-7xl mx-auto text-center py-12 text-destructive">
-        <p>Failed to load lab exams: {(error as Error).message}</p>
+        <p>Failed to load contests: {(error as Error).message}</p>
       </div>
     );
   }
@@ -48,7 +50,7 @@ const ContestsPage = () => {
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Lab Exams</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Contests</h1>
           <p className="text-muted-foreground mt-1">Test your skills with timed coding challenges</p>
         </div>
       </div>
@@ -56,8 +58,8 @@ const ContestsPage = () => {
       {exams.length === 0 ? (
         <div className="glass-card rounded-xl p-16 text-center text-muted-foreground">
           <Trophy className="w-12 h-12 mx-auto mb-4 opacity-40" />
-          <p className="text-lg font-medium mb-1">No lab exams available</p>
-          <p className="text-sm">Check back later for upcoming lab exams</p>
+          <p className="text-lg font-medium mb-1">No contests available</p>
+          <p className="text-sm">Check back later for upcoming contests</p>
         </div>
       ) : (
         <div className="grid gap-4">
@@ -134,8 +136,27 @@ const ContestsPage = () => {
                     </Button>
                   )}
                   {exam.status === "SCHEDULED" && (
-                    <Button size="sm" variant="outline" asChild>
-                      <Link to={`/contests/${exam.id}`}>View Details</Link>
+                    <Button 
+                      size="sm" 
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        console.log('Registering for contest:', exam.id);
+                        registerMut.mutate(exam.id, {
+                          onSuccess: () => {
+                            toast.success("Registered successfully!");
+                            // Invalidate contests query immediately if not handled by hook
+                            // queryClient.invalidateQueries({ queryKey: ["contests"] });
+                          },
+                          onError: (err) => {
+                            console.error('Registration failed:', err);
+                            toast.error(`Registration failed: ${err.message}`);
+                          }
+                        });
+                      }}
+                      disabled={registerMut.isPending || (exam as any).isRegistered === true}
+                    >
+                      {registerMut.isPending ? "Registering..." : (exam as any).isRegistered ? "Registered" : "Register"}
                     </Button>
                   )}
                   {exam.status === "COMPLETED" && (

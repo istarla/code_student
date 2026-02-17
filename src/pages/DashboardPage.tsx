@@ -53,7 +53,7 @@ const DashboardPage = () => {
         <div className="glass-card rounded-xl p-5 hover-lift">
           <Trophy className="w-5 h-5 text-warning mb-2" />
           <p className="text-3xl font-bold">{exams.length}</p>
-          <p className="text-sm text-muted-foreground">Active Lab Exams</p>
+          <p className="text-sm text-muted-foreground">Active Contests</p>
         </div>
         <div className="glass-card rounded-xl p-5 hover-lift">
           <TrendingUp className="w-5 h-5 text-secondary mb-2" />
@@ -93,7 +93,7 @@ const DashboardPage = () => {
         </div>
 
         <div className="glass-card rounded-xl p-5">
-          <h2 className="font-semibold mb-3">Upcoming Lab Exams</h2>
+          <h2 className="font-semibold mb-3">Upcoming Contests</h2>
           <div className="space-y-2">
             {exams.length > 0 ? (
               exams.slice(0, 2).map((c, i) => (
@@ -112,12 +112,12 @@ const DashboardPage = () => {
                 </Link>
               ))
             ) : (
-              <p className="text-sm text-muted-foreground text-center py-4">No upcoming lab exams</p>
+              <p className="text-sm text-muted-foreground text-center py-4">No upcoming contests</p>
             )}
           </div>
           <Button variant="ghost" size="sm" className="mt-2 w-full" asChild>
             <Link to="/contests">
-              View All Lab Exams <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+              View All Contests <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
             </Link>
           </Button>
         </div>

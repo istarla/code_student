@@ -38,9 +38,9 @@ const MyContestsPage = () => {
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">My Lab Exams</h1>
+          <h1 className="text-3xl font-bold tracking-tight">My Contests</h1>
           <p className="text-muted-foreground mt-1">
-            Lab exams you've participated in
+            Contests you've participated in
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -60,10 +60,10 @@ const MyContestsPage = () => {
       {exams.length === 0 ? (
         <div className="glass-card rounded-xl p-16 text-center text-muted-foreground">
           <Trophy className="w-12 h-12 mx-auto mb-4 opacity-40" />
-          <p className="text-lg font-medium mb-1">No lab exams yet</p>
-          <p className="text-sm mb-4">Browse available lab exams to get started</p>
+          <p className="text-lg font-medium mb-1">No contests yet</p>
+          <p className="text-sm mb-4">Browse available contests to get started</p>
           <Button asChild variant="default" size="sm">
-            <Link to="/contests">Browse Lab Exams</Link>
+            <Link to="/contests">Browse Contests</Link>
           </Button>
         </div>
       ) : (
@@ -98,7 +98,7 @@ const MyContestsPage = () => {
           {/* Completed Exams */}
           {completedExams.length > 0 && (
             <div>
-              <h2 className="text-xl font-semibold mb-3">Past Lab Exams</h2>
+              <h2 className="text-xl font-semibold mb-3">Past Contests</h2>
               <div className="grid gap-4">
                 {completedExams.map((exam, i) => (
                   <ExamCard key={exam.id} exam={exam} index={i} />

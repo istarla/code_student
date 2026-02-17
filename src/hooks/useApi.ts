@@ -39,7 +39,7 @@ export function useProblem(id: string) {
 export function useRunCode(problemId: string) {
   return useMutation({
     mutationFn: (body: { code: string; language: string; customInput?: string }) =>
-      runCode(problemId, body),
+      runCode(problemId, body.code, body.language, body.customInput),
   });
 }
 
@@ -47,7 +47,7 @@ export function useSubmitCode(problemId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: { code: string; language: string; contestId?: string }) =>
-      submitCode(problemId, body),
+      submitCode(problemId, body.code, body.language, body.contestId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["submissions"] });
       qc.invalidateQueries({ queryKey: ["progress"] });
@@ -68,7 +68,11 @@ export function useAddBookmark() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (problemId: string) => addBookmark(problemId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["bookmarks"] }),
+    onSuccess: (_, problemId) => {
+      qc.invalidateQueries({ queryKey: ["bookmarks"] });
+      qc.invalidateQueries({ queryKey: ["problem", problemId] }); // Update the specific problem
+      qc.invalidateQueries({ queryKey: ["problems"] }); // Update list
+    },
   });
 }
 
@@ -76,7 +80,11 @@ export function useRemoveBookmark() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (problemId: string) => removeBookmark(problemId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["bookmarks"] }),
+    onSuccess: (_, problemId) => {
+      qc.invalidateQueries({ queryKey: ["bookmarks"] });
+      qc.invalidateQueries({ queryKey: ["problem", problemId] }); // Update the specific problem
+      qc.invalidateQueries({ queryKey: ["problems"] }); // Update list
+    },
   });
 }
 

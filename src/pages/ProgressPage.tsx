@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Target, TrendingUp, Award, Code2, Loader2 } from "lucide-react";
-import { getMyProgress } from "@/lib/api";
+import { getMyProgress, getProblems } from "@/lib/api";
 import type { Progress } from "@/lib/api";
 
 const ProgressPage = () => {
@@ -11,6 +11,19 @@ const ProgressPage = () => {
 
   // Backend returns: { solved, attempted, total, unsolved, solvedByDifficulty }
   const progress = data as Progress | undefined;
+
+  // Fetch all problems to calculate totals per difficulty
+  const { data: problemsData } = useQuery({
+    queryKey: ["problems"],
+    queryFn: () => getProblems(),
+  });
+
+  const allProblems = Array.isArray(problemsData) ? problemsData : (problemsData as any)?.problems || [];
+
+  // Calculate totals per difficulty from all problems
+  const totalEasy = allProblems.filter((p: any) => p.difficulty === "EASY").length;
+  const totalMedium = allProblems.filter((p: any) => p.difficulty === "MEDIUM").length;
+  const totalHard = allProblems.filter((p: any) => p.difficulty === "HARD").length;
 
   if (isLoading) {
     return (
@@ -48,11 +61,21 @@ const ProgressPage = () => {
     );
   }
 
+  // Calculate Acceptance Rate
+  const totalSubmissions = progress.solved + progress.attempted; // Approximate if not provided
+  // Or better: Solved / (Solved + Failed) but we only have solved/attempted/unsolved counts.
+  // User asked for "Acceptance Rate", usually Solved / Total Submissions.
+  // If "Attempted" means "Tried but not solved", then Total Submissions >= Solved + Attempted.
+  // Let's use (Solved / (Solved + Attempted)) as a proxy for personal acceptance rate.
+  const acceptanceRate = totalSubmissions > 0 
+    ? Math.round((progress.solved / totalSubmissions) * 100) 
+    : 0;
+
   // Calculate derived stats from backend data
   const stats = [
     { label: "Problems Solved", value: progress.solved, icon: CheckCircle2, color: "text-success" },
+    { label: "Acceptance Rate", value: `${acceptanceRate}%`, icon: Award, color: "text-blue-500" },
     { label: "Attempted", value: progress.attempted, icon: Code2, color: "text-secondary" },
-    { label: "Unsolved", value: progress.unsolved, icon: Target, color: "text-warning" },
     { label: "Total Problems", value: progress.total, icon: TrendingUp, color: "text-primary" },
   ];
 
@@ -63,9 +86,24 @@ const ProgressPage = () => {
   }, {} as Record<string, number>);
 
   const difficultyBreakdown = [
-    { label: "Easy", solved: difficultyMap['EASY'] || 0, total: progress.total, color: "bg-success" },
-    { label: "Medium", solved: difficultyMap['MEDIUM'] || 0, total: progress.total, color: "bg-warning" },
-    { label: "Hard", solved: difficultyMap['HARD'] || 0, total: progress.total, color: "bg-destructive" },
+    { 
+      label: "Easy", 
+      solved: difficultyMap['EASY'] || 0, 
+      total: totalEasy || progress.total, // Fallback to global total if 0 (shouldn't happen if problems loaded)
+      color: "bg-success" 
+    },
+    { 
+      label: "Medium", 
+      solved: difficultyMap['MEDIUM'] || 0, 
+      total: totalMedium || progress.total, 
+      color: "bg-warning" 
+    },
+    { 
+      label: "Hard", 
+      solved: difficultyMap['HARD'] || 0, 
+      total: totalHard || progress.total, 
+      color: "bg-destructive" 
+    },
   ];
 
   return (
@@ -94,7 +132,9 @@ const ProgressPage = () => {
             <div key={d.label}>
               <div className="flex items-center justify-between text-sm mb-1.5">
                 <span>{d.label}</span>
-                <span className="text-muted-foreground">{d.solved} solved</span>
+                <span className="text-muted-foreground">
+                  {d.solved} / {d.total} solved
+                </span>
               </div>
               <div className="h-2.5 rounded-full bg-muted overflow-hidden">
                 <div

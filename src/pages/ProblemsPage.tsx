@@ -26,7 +26,12 @@ const ProblemsPage = () => {
     status: statusFilter !== "ALL" ? (statusFilter as "SOLVED" | "ATTEMPTED" | "UNSOLVED") : undefined,
   });
 
-  const problems = Array.isArray(data) ? data : data?.problems ?? data?.data ?? [];
+  const problems = useMemo(() => {
+    const rawData = Array.isArray(data) ? data : data?.problems ?? data?.data ?? [];
+    console.log('[ProblemsPage] Raw data:', data);
+    console.log('[ProblemsPage] Processed problems:', rawData);
+    return rawData;
+  }, [data]);
 
   // Group problems by module
   const problemsByModule = useMemo(() => {
@@ -48,13 +53,28 @@ const ProblemsPage = () => {
     });
   }, [problems]);
 
-  const stats = useMemo(() => ({
-    total: problems.length,
-    solved: problems.filter((p: any) => p.status === "SOLVED").length,
-    easy: problems.filter((p: any) => p.difficulty === "EASY").length,
-    medium: problems.filter((p: any) => p.difficulty === "MEDIUM").length,
-    hard: problems.filter((p: any) => p.difficulty === "HARD").length,
-  }), [problems]);
+  const stats = useMemo(() => {
+    const total = problems.length;
+    const solved = problems.filter((p: any) => p.status === "SOLVED").length;
+    const attempted = problems.filter((p: any) => p.status === "ATTEMPTED").length;
+    
+    // Acceptance Rate: Solved / (Solved + Attempted) * 100
+    // If no attempted/solved, it's 0.
+    const submissionCount = solved + attempted;
+    const acceptanceRate = submissionCount > 0 ? Math.round((solved / submissionCount) * 100) : 0;
+
+    return {
+      total,
+      solved,
+      acceptanceRate,
+      easyTotal: problems.filter((p: any) => p.difficulty === "EASY").length,
+      easySolved: problems.filter((p: any) => p.difficulty === "EASY" && p.status === "SOLVED").length,
+      mediumTotal: problems.filter((p: any) => p.difficulty === "MEDIUM").length,
+      mediumSolved: problems.filter((p: any) => p.difficulty === "MEDIUM" && p.status === "SOLVED").length,
+      hardTotal: problems.filter((p: any) => p.difficulty === "HARD").length,
+      hardSolved: problems.filter((p: any) => p.difficulty === "HARD" && p.status === "SOLVED").length,
+    };
+  }, [problems]);
 
   const toggleModule = (moduleName: string) => {
     const newExpanded = new Set(expandedModules);
@@ -79,14 +99,22 @@ const ProblemsPage = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Problems</h1>
-          <p className="text-muted-foreground mt-1">
-            {stats.solved}/{stats.total} solved
-          </p>
+          <div className="flex items-center gap-4 mt-1 text-muted-foreground">
+             <p>{stats.solved}/{stats.total} Solved</p>
+             <div className="h-4 w-px bg-border" />
+             <p>Acceptance Rate: {stats.acceptanceRate}%</p>
+          </div>
         </div>
         <div className="flex gap-2">
-          <Badge variant="outline" className="difficulty-easy border px-3 py-1">{stats.easy} Easy</Badge>
-          <Badge variant="outline" className="difficulty-medium border px-3 py-1">{stats.medium} Medium</Badge>
-          <Badge variant="outline" className="difficulty-hard border px-3 py-1">{stats.hard} Hard</Badge>
+          <Badge variant="outline" className="difficulty-easy border px-3 py-1">
+            Easy: {stats.easySolved}/{stats.easyTotal}
+          </Badge>
+          <Badge variant="outline" className="difficulty-medium border px-3 py-1">
+            Medium: {stats.mediumSolved}/{stats.mediumTotal}
+          </Badge>
+          <Badge variant="outline" className="difficulty-hard border px-3 py-1">
+            Hard: {stats.hardSolved}/{stats.hardTotal}
+          </Badge>
         </div>
       </div>
 

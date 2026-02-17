@@ -247,7 +247,7 @@ export interface Progress {
 }
 
 export interface Language {
-  id: string;
+  id: string | number;
   name: string;
   value: string;
   version: string;
@@ -380,7 +380,7 @@ export const getSubmissionById = async (id: string) => {
   return fetchAPI(`/api/student/coding/my-submissions/${id}`);
 };
 
-// Lab Exams (uses contest endpoints)
+// Contests (uses contest endpoints)
 export const getContests = async (params?: { status?: string; page?: number; limit?: number }) => {
   return fetchAPI('/api/student/coding/contests', { params });
 };
@@ -393,10 +393,11 @@ export const getContestById = async (id: string) => {
   return fetchAPI(`/api/student/coding/contests/${id}`);
 };
 
-export const registerForContest = async (id: string, accessCode?: string) => {
+export const registerForContest = async (id: string) => {
+  console.log('[API] registerForContest called with id:', id);
   return fetchAPI(`/api/student/coding/contests/${id}/register`, {
     method: 'POST',
-    ...(accessCode && { data: { accessCode } }),
+    // Per API spec: No body required
   });
 };
 
@@ -409,7 +410,7 @@ export const getMyContests = async () => {
 };
 
 // Languages
-export const getLanguages = async () => {
+export const getLanguages = async (): Promise<Language[]> => {
   return fetchAPI('/api/student/coding/languages');
 };
 
